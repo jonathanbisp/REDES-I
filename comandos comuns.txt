@@ -1,0 +1,27 @@
+#desbuga mininet limpando tudo
+sudo mn -c
+
+#adicionar roteador ao controlador
+sudo ovs-vsctl set-controller s1 tcp:127.0.0.1:6653
+sudo ovs-vsctl set-controller s2 tcp:127.0.0.1:6653
+sudo ovs-vsctl set-controller s3 tcp:127.0.0.1:6653
+sudo ovs-vsctl set-controller s4 tcp:127.0.0.1:6653
+sudo ovs-vsctl set-controller s5 tcp:127.0.0.1:6653
+sudo ovs-vsctl set-controller s6 tcp:127.0.0.1:6653
+
+#deletar flows roteador
+sudo ovs-ofctl del-flows s1 -O OpenFlow13
+sudo ovs-ofctl del-flows s2 -O OpenFlow13
+sudo ovs-ofctl del-flows s3 -O OpenFlow13
+sudo ovs-ofctl del-flows s4 -O OpenFlow13
+sudo ovs-ofctl del-flows s5 -O OpenFlow13
+sudo ovs-ofctl del-flows s6 -O OpenFlow13
+
+#iniciar ryu manager
+ryu-manager simple_switch_v4.py
+
+add_recepcao
+
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d \
+'{"recepcao": ["fa:4c:56:30:c2:c2"], "internet":["e2:ee:e0:de:bc:13"], \
+"visitante": ["d2:7e:44:d6:97:56", "c6:79:7b:17:8a:a4"]}'
