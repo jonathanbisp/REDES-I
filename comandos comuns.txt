@@ -22,6 +22,16 @@ ryu-manager simple_switch_v4.py
 
 add_recepcao
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d \
-'{"recepcao": ["fa:4c:56:30:c2:c2"], "internet":["e2:ee:e0:de:bc:13"], \
-"visitante": ["d2:7e:44:d6:97:56", "c6:79:7b:17:8a:a4"]}'
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d '{"recepcao": ["ea:e8:bb:f8:f9:e0"], "internet":["4a:f0:8c:06:39:67"], "visitante": ["f6:47:38:5e:e8:ac", "3e:fe:d9:c0:73:cb"]}'
+
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "4a:f0:8c:06:39:67", "host_b": "f6:47:38:5e:e8:ac", "acao": "permitir"}'
+
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "recepcao", "segmento_b": "internet", "acao": "permitir"}'
+
+https://github.com/faucetsdn/ryu/blob/master/ryu/app/simple_switch_lacp_13.py#L40-L49
+
+exemplo pra remover flow
+
+hard_timeout
+
+linha 1686 sabe as w instead of wb
