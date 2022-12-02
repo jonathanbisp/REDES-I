@@ -53,3 +53,6 @@ host segmento horario
 horarios > host > segmentos
 
 apagar tudo.
+
+# rodar isso aqui fodase
+sudo ovs-vswitchd
