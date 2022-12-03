@@ -19,8 +19,6 @@ from ryu.ofproto import ofproto_v1_3_parser
 
 myapp_name = "switch_team_2"
 
-DEFAULT_PRIORITY = 1000
-
 HOST_HOST_TIME = 1
 HOST_HOST = 2
 HOST_SEGMENT_TIME = 3
@@ -29,22 +27,29 @@ SEGMENT_SEGMENT_TIME = 5
 SEGMENT_SEGMENT = 6
 
 
-class SimpleSwitch(app_manager.RyuApp):
+class SwitchController(app_manager.RyuApp):
     _CONTEXTS = {"wsgi": WSGIApplication}
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(SimpleSwitch, self).__init__(*args, **kwargs)
+        super(SwitchController, self).__init__(*args, **kwargs)
         wsgi = kwargs["wsgi"]
-        wsgi.register(SimpleSwitchController, {myapp_name: self})
+        wsgi.register(SwitchControllerHttp, {myapp_name: self})
 
         self.mac_to_port = {}
 
         self.segments: dict[str, list[str]] = {}
 
-        self.permissions: dict[str, dict[str, dict]] = {}
+        self.permissions: dict[int, dict[str, dict]] = {
+            HOST_HOST_TIME: {},
+            HOST_HOST: {},
+            HOST_SEGMENT_TIME: {},
+            HOST_SEGMENT: {},
+            SEGMENT_SEGMENT_TIME: {},
+            SEGMENT_SEGMENT: {}
+        }
 
-        self.switches: dict[str, Datapath] = {}
+        self.switches: dict[int, Datapath] = {}
 
     def get_segment_by_mac_address(self, mac_address: str) -> Union[str, None]:
         for segment, mac_addresses in self.segments.items():
@@ -53,21 +58,42 @@ class SimpleSwitch(app_manager.RyuApp):
 
         return None
 
-    def get_ordered_string(item_a: str, item_b: str) -> str:
-        ordered = sorted([item_a, item_b])
-        return "{}-{}".format(ordered[0], ordered[1])
+    def get_ordered_string(self, items: list[str]) -> str:
+        try:
+            ordered = sorted(items)
+            return "{}-{}".format(ordered[0], ordered[1])
+        except TypeError:
+            return None
+        
+        
+    def get_priority_rule(self, first:str, second:str) -> bool:
+        first_segment: str = self.get_segment_by_mac_address(mac_address=first)
+        second_segment: str = self.get_segment_by_mac_address(mac_address=second)
+        
+        mac_key: str = self.get_ordered_string([first, second])
+        segment_key: str = self.get_ordered_string([first_segment, second_segment])
+        host_segment_key1: str = self.get_ordered_string([first, second_segment])
+        host_segment_key2: str = self.get_ordered_string([first_segment, second])
+        keys: list[str] = [mac_key, segment_key, host_segment_key1, host_segment_key2]
+        
+        for level in range(HOST_HOST_TIME, SEGMENT_SEGMENT + 1):
+            for key in keys:
+                permission = self.permissions[level].get(key)
+                if permission:
+                    if permission.get("allow") == True:
+                        return permission
+                    if permission.get("allow") == False:
+                        return None
+        return None
 
-    def allowed_to_talk(self, first, second) -> bool:
-        for permission in self.permissions:
-            if first in permission and second in permission:
-                return True
-        return False
 
     def find_port_datapath_by_mac(self, mac_address) -> Union[Datapath, int]:
-        for _, mac_port in self.mac_to_port.items():
+        for datapathid, mac_port in self.mac_to_port.items():
             for mac, port in mac_port.items():
                 if mac == mac_address:
-                    return mac_port["datapath"], port
+                    return self.switches[datapathid], port
+        return None, None
+
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -108,9 +134,6 @@ class SimpleSwitch(app_manager.RyuApp):
 
         self.mac_to_port.setdefault(datapathid, {})
 
-        src_segment: str = self.get_segment_by_mac_address(mac_address=src)
-        dst_segment: str = self.get_segment_by_mac_address(mac_address=dst)
-
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[datapathid][src] = in_port
 
@@ -125,47 +148,27 @@ class SimpleSwitch(app_manager.RyuApp):
 
         # install a flow to avoid packet_in next time
         if out_port != protocol_constants.OFPP_FLOOD:
-            added_rule = False
-            if self.allowed_to_talk(src_segment, dst_segment):
-                match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
-                    in_port=in_port, eth_dst=dst
-                )
-                if msg.buffer_id != protocol_constants.OFP_NO_BUFFER:
-                    self.add_flow(
-                        datapath=datapath,
-                        match=match,
-                        actions=actions,
-                        buffer_id=msg.buffer_id,
-                        priority=DEFAULT_PRIORITY,
-                    )
-                else:
-                    self.add_flow(datapath, match, actions, priority=DEFAULT_PRIORITY)
-                added_rule = True
 
-            # compare hosts
-            if self.allowed_to_talk(src, dst):
-                match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
-                    in_port=in_port, eth_dst=dst
+            priority_rule = self.get_priority_rule(src, dst)
+            if not priority_rule:
+                return
+            
+            match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
+                in_port=in_port, eth_dst=dst
+            )
+            if msg.buffer_id != protocol_constants.OFP_NO_BUFFER:
+                self.add_flow(
+                    datapath=datapath,
+                    match=match,
+                    actions=actions,
+                    buffer_id=msg.buffer_id,
                 )
-                if msg.buffer_id != protocol_constants.OFP_NO_BUFFER:
-                    self.add_flow(
-                        datapath=datapath,
-                        match=match,
-                        actions=actions,
-                        buffer_id=msg.buffer_id,
-                        priority=DEFAULT_PRIORITY,
-                    )
-                else:
-                    self.add_flow(
-                        datapath=datapath,
-                        match=match,
-                        actions=actions,
-                        priority=DEFAULT_PRIORITY,
-                    )
-                added_rule = True
-
-            # if not added_rule:
-            #     return
+            else:
+                self.add_flow(
+                    datapath=datapath,
+                    match=match,
+                    actions=actions,
+                )
 
         data = None
         if msg.buffer_id == protocol_constants.OFP_NO_BUFFER:
@@ -185,7 +188,7 @@ class SimpleSwitch(app_manager.RyuApp):
         datapath: Datapath,
         match: ofproto_v1_3_parser.OFPMatch,
         actions: ofproto_v1_3_parser.OFPAction,
-        priority: int,
+        priority: int = 1000,
         buffer_id=None,
     ):
         protocol_constants: ofproto_v1_3 = datapath.ofproto
@@ -215,7 +218,7 @@ class SimpleSwitch(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def del_flow(
-        self, datapath: Datapath, in_port: int, eth_dst: str, priority: int
+        self, datapath: Datapath, in_port: int, eth_dst: str
     ) -> None:
         protocol_constants: ofproto_v1_3 = datapath.ofproto
         protocol_parser: ofproto_v1_3_parser = datapath.ofproto_parser
@@ -228,49 +231,20 @@ class SimpleSwitch(app_manager.RyuApp):
             command=protocol_constants.OFPFC_DELETE,
             out_port=protocol_constants.OFPP_ANY,
             out_group=protocol_constants.OFPG_ANY,
-            priority=priority,
             match=match,
         )
         datapath.send_msg(mod)
 
 
-class SimpleSwitchController(ControllerBase):
+class SwitchControllerHttp(ControllerBase):
     def __init__(self, req, link, data, **config):
-        super(SimpleSwitchController, self).__init__(req, link, data, **config)
-        self.simple_switch_app: SimpleSwitch = data[myapp_name]
-
-    def create_set_sorted(item_a, item_b) -> set:
-        return set([item_a, item_b].sort())
-
-    def del_host_rule(self, mac_address_a, mac_address_b, priority):
-        try:
-            datapath, port = self.simple_switch_app.find_port_datapath_by_mac(
-                mac_address_a
-            )
-
-            self.simple_switch_app.del_flow(
-                datapath=datapath,
-                in_port=port,
-                eth_dst=mac_address_b,
-                priority=priority,
-            )
-
-            datapath, port = self.simple_switch_app.find_port_datapath_by_mac(
-                mac_address_b
-            )
-            self.simple_switch_app.del_flow(
-                datapath=datapath,
-                in_port=port,
-                eth_dst=mac_address_a,
-                priority=priority,
-            )
-        except ValueError:
-            pass
+        super(SwitchControllerHttp, self).__init__(req, link, data, **config)
+        self.controller: SwitchController = data[myapp_name]
 
     @route(myapp_name, "/nac/segmentos/", methods=["POST"])
     def add_segments(self, req, **kwargs):
         new_segments = req.json
-        segments = self.simple_switch_app.segments
+        segments = self.controller.segments
 
         for segment_name, mac_addresses in new_segments.items():
             if segments.get(segment_name):
@@ -278,18 +252,18 @@ class SimpleSwitchController(ControllerBase):
                     set(segments[segment_name] + mac_addresses)
                 )
             else:
-                self.simple_switch_app.segments[segment_name] = mac_addresses
+                self.controller.segments[segment_name] = mac_addresses
         return Response(status=204)
 
     @route(myapp_name, "/nac/segmentos/", methods=["GET"])
     def get_segments(self, req, **kwargs):
-        segments = json.dumps(self.simple_switch_app.segments)
+        segments = json.dumps(self.controller.segments)
         return Response(content_type="application/json", body=segments, status=200)
 
     @route(myapp_name, "/nac/segmentos/{segment_name}", methods=["DELETE"])
     def remove_segments_by_name(self, req, **kwargs):
         segment_name = kwargs.get("segment_name")
-        segments = self.simple_switch_app.segments
+        segments = self.controller.segments
         if segment_name in segments.keys():
             del segments[segment_name]
         else:
@@ -302,7 +276,7 @@ class SimpleSwitchController(ControllerBase):
     def remove_segments_by_name(self, req, **kwargs):
         segment_name = kwargs.get("segment_name")
         mac_address = kwargs.get("mac_address")
-        segments = self.simple_switch_app.segments
+        segments = self.controller.segments
         if segment_name in segments.keys():
             segment = segments.get(segment_name)
             if mac_address in segment:
@@ -317,7 +291,7 @@ class SimpleSwitchController(ControllerBase):
     def remove_segments_by_name(self, req, **kwargs):
         segment_name = kwargs.get("segment_name")
         mac_address = kwargs.get("mac_address")
-        segments = self.simple_switch_app.segments
+        segments = self.controller.segments
         if segment_name in segments.keys():
             segment = segments.get(segment_name)
             if mac_address in segment:
@@ -325,6 +299,11 @@ class SimpleSwitchController(ControllerBase):
 
                 return Response(status=204)
         return Response(status=404)
+
+    @route(myapp_name, "/nac/controle/", methods=["GET"])
+    def get_acess_control_rules(self, req, **kwargs):
+        rules = json.dumps(self.controller.permissions)
+        return Response(content_type="application/json", body=rules, status=200)
 
     @route(myapp_name, "/nac/controle/", methods=["POST"])
     def access_control(self, req, **kwargs):
@@ -342,53 +321,87 @@ class SimpleSwitchController(ControllerBase):
         if host_a and host_b and time:
             ...
         elif host_a and host_b:
-            ...
+            item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
+            allow: bool = True if action == "permitir" else False
+            
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [host_a, host_b],
+                "allow": allow
+            }
+            
+            self.remove_permissions(item_a=host_a, item_b=host_b)
+                    
         elif host and segment and time:
             ...
         elif host and segment:
-            ...
+            item_key: str = self.controller.get_ordered_string(items=[host, segment])
+            allow: bool = True if action == "permitir" else False
+            segment_addresses = self.controller.segments[segment]
+            
+            self.controller.permissions[HOST_SEGMENT][item_key] = {
+                "target": [host, self.controller.segments[segment]],
+                "allow": allow
+            }
+
+            self.remove_permissions(item_a=host, item_b=segment_addresses)
+            
         elif segment_a and segment_b and time:
             ...
+        elif segment_a and segment_b:
+            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            allow: bool = True if action == "permitir" else False
+            segment_a_addresses = self.controller.segments[segment_a]
+            segment_b_addresses = self.controller.segments[segment_b]
+            
+            self.controller.permissions[HOST_SEGMENT][item_key] = {
+                "allow": allow
+            }
 
-        # rule_json = req.json
-        # if rule_json.get("segmento_a"):
-        #     if rule_json.get("acao") == "permitir":
-        #         rule = sorted(
-        #             [rule_json.get("segmento_a"), rule_json.get("segmento_b")]
-        #         )
-        #         if rule not in self.simple_switch_app.permissions:
-        #             self.simple_switch_app.permissions.append(rule)
-        #     if rule_json.get("acao") == "bloquear":
-        #         rule = sorted(
-        #             [rule_json.get("segmento_a"), rule_json.get("segmento_b")]
-        #         )
-        #         if rule in self.simple_switch_app.permissions:
-        #             self.simple_switch_app.permissions.remove(rule)
+            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
+            
+        
+            
+    def remove_permissions(self, item_a: Union[str, list[str]], item_b: Union[str, list[str]]):
+        mac_addresses_list: list[list[str]] = []
+        
+        if isinstance(item_a, str) and isinstance(item_b, str):
+            mac_addresses_list = [[item_a, item_b]]
+        elif isinstance(item_a, list) and isinstance(item_b, str):
+            mac_addresses_list = [[mac_address_a, item_b] for mac_address_a in item_a]
+        elif isinstance(item_a, str) and isinstance(item_b, list):
+            mac_addresses_list = [[item_a, mac_address_b] for mac_address_b in item_b]
+        elif isinstance(item_a, list) and isinstance(item_b, list):
+            mac_addresses_list = [
+                [mac_address_a, mac_address_b]
+                for mac_address_a in item_a
+                for mac_address_b in item_b
+            ]
+        
+        for mac_addresses in mac_addresses_list:
+            self.controller.logger.info(mac_addresses)
+            self.del_host_rule(mac_addresses[0], mac_addresses[1])
+      
 
-        #         segments = self.simple_switch_app.segments
-        #         segment_a = segments.get(rule_json.get("segmento_a"))
-        #         segment_b = segments.get(rule_json.get("segmento_b"))
-
-        #         [
-        #             self.del_host_rule(
-        #                 mac_address_a=mac_address_a,
-        #                 mac_address_b=mac_address_b,
-        #                 priority=DEFAULT_PRIORITY,
-        #             )
-        #             for mac_address_a in segment_a
-        #             for mac_address_b in segment_b
-        #         ]
-        # elif rule_json.get("host_a"):
-        #     if rule_json.get("acao") == "permitir":
-        #         rule = sorted([rule_json.get("host_a"), rule_json.get("host_b")])
-        #         if rule not in self.simple_switch_app.permissions:
-        #             self.simple_switch_app.permissions.append(rule)
-        #     elif rule_json.get("acao") == "bloquear":
-        #         rule = sorted([rule_json.get("host_a"), rule_json.get("host_b")])
-        #         if rule in self.simple_switch_app.permissions:
-        #             self.simple_switch_app.permissions.remove(rule)
-        #         self.del_host_rule(
-        #             mac_address_a=rule_json.get("host_a"),
-        #             mac_address_b=rule_json.get("host_b"),
-        #             priority=DEFAULT_PRIORITY,
-        #         )
+    def del_host_rule(self, mac_address_a, mac_address_b):
+        try:
+            datapath_a, port_a = self.controller.find_port_datapath_by_mac(
+                mac_address_a
+            )
+            if datapath_a and port_a:
+                self.controller.del_flow(
+                    datapath=datapath_a,
+                    in_port=port_a,
+                    eth_dst=mac_address_b,
+                )
+            
+            datapath_b, port_b = self.controller.find_port_datapath_by_mac(
+                mac_address_b
+            )
+            if datapath_b and port_b:
+                self.controller.del_flow(
+                    datapath=datapath_b,
+                    in_port=port_b,
+                    eth_dst=mac_address_a,
+                )
+        except ValueError:
+            pass
