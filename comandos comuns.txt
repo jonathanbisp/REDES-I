@@ -20,7 +20,7 @@ sudo ovs-ofctl del-flows s6 -O OpenFlow13
 #iniciar ryu manager
 ryu-manager simple_switch_v4.py
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d '{"recepcao": ["62:41:a3:7b:78:54"], "internet":["72:cd:35:e1:8b:2b"], "visitante": ["22:11:a6:c9:bb:72", "3a:5c:cd:ea:da:94"], "rh": ["0e:5a:50:f3:ec:dc"]}'
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d '{"recepcao": ["11:00:00:00:00:00"], "internet":["61:00:00:00:00:00"], "visitante": ["01:00:00:00:00:00", "02:00:00:00:00:00"], "rh": ["21:00:00:00:00:00"], "diretoria": ["31:00:00:00:00:00"], "financeiro": ["41:00:00:00:00:00"], "ti": ["51:00:00:00:00:00"], "vendas": ["71:00:00:00:00:00"]}'
 curl -X GET -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/
 
 curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "22:11:a6:c9:bb:72", "host_b": "72:cd:35:e1:8b:2b", "acao": "permitir"}'´
