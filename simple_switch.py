@@ -143,7 +143,7 @@ class SwitchController(app_manager.RyuApp):
 
         self.switches.setdefault(datapathid, datapath)
 
-        self.add_flow(datapath=datapath, match=match, actions=actions, priority=0, hard_timeout=0)
+        self.add_flow(datapath=datapath, match=match, actions=actions, priority=0)
 
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -185,15 +185,11 @@ class SwitchController(app_manager.RyuApp):
                 return
 
             hard_timeout = 0
-            time_permission: str = priority_rule.get("time_permission")
-            if time_permission:
-                weekdaytime_range = time_permission.split(" ")
+            time: str = priority_rule.get("time")
+            if time:
+                weekdaytime_range = time.split(" ")
                 week_range = weekdaytime_range[0]
                 time_range = weekdaytime_range[1]
-                
-                self.logger.info(not self.weekday_allowed(week_range))
-                self.logger.info(not self.time_allowed(time_range))
-                
                 if (not self.weekday_allowed(week_range)) or (not self.time_allowed(time_range)):
                     return
                 
@@ -367,19 +363,18 @@ class SwitchControllerHttp(ControllerBase):
         segment: str = rule_json.get("segmento")
         action: str = rule_json.get("acao")
         download_bandwidth: str = rule_json.get("banda_download")
-        time_permission: str = rule_json.get("horario")
+        time: str = rule_json.get("horario")
 
-
-        self.controller.logger.info(time_permission)
-        if host_a and host_b and time_permission:
+        if host_a and host_b and time:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
             allow: bool = True if action == "permitir" else False
 
-            self.controller.permissions[HOST_HOST_TIME][item_key] = {
+            self.controller.permissions[HOST_HOST][item_key] = {
                 "target": [host_a, host_b],
                 "allow": allow,
-                "time_permission": time_permission,
+                "time": time,
             }
+
             self.remove_permissions(item_a=host_a, item_b=host_b)
         elif host_a and host_b:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
@@ -389,48 +384,146 @@ class SwitchControllerHttp(ControllerBase):
                 "target": [host_a, host_b],
                 "allow": allow
             }
+            
             self.remove_permissions(item_a=host_a, item_b=host_b)
-        elif host and segment and time_permission:
+                    
+        elif host and segment and time:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
+            segment_addresses = self.controller.segments[segment]
 
-            self.controller.permissions[HOST_SEGMENT_TIME][item_key] = {
-                "target": [host, segment],
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [host, segment_addresses],
                 "allow": allow,
-                "time_permission": time_permission,
+                "time": time,
             }
-            self.remove_permissions(item_a=host, item_b=segment)
+
+            self.remove_permissions(item_a=host, item_b=segment_addresses)
         elif host and segment:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
             segment_addresses = self.controller.segments[segment]
             
             self.controller.permissions[HOST_SEGMENT][item_key] = {
-                "target": [host, self.controller.segments[segment]],
+                "target": [host, segment_addresses],
                 "allow": allow
             }
+
             self.remove_permissions(item_a=host, item_b=segment_addresses)
-        elif segment_a and segment_b and time_permission:
+            
+        elif segment_a and segment_b and time:
             item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
             allow: bool = True if action == "permitir" else False
-
-            self.controller.permissions[SEGMENT_SEGMENT_TIME][item_key] = {
-                "target": [segment_a, segment_b],
+            segment_a_addresses = self.controller.segments[segment_a]
+            segment_b_addresses = self.controller.segments[segment_b]
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [segment_a_addresses, segment_b_addresses],
                 "allow": allow,
-                "time_permission": time_permission,
+                "time": time,
             }
-            self.remove_permissions(item_a=segment_a, item_b=segment_b)
+
+            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
         elif segment_a and segment_b:
             item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
             allow: bool = True if action == "permitir" else False
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
             
-            self.controller.permissions[SEGMENT_SEGMENT][item_key] = {
+            self.controller.permissions[HOST_SEGMENT][item_key] = {
+                "target": [segment_b_addresses, segment_b_addresses],
                 "allow": allow
             }
+
             self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
 
+    @route(myapp_name, "/nac/controle/", methods=["DELETE"])
+    def remove_control(self, req, **kwargs):
+        rule_json = req.json
+        segment_a:  str = rule_json.get("segmento_a")
+        segment_b:  str = rule_json.get("segmento_b")
+        host_a:     str = rule_json.get("host_a")
+        host_b:     str = rule_json.get("host_b")
+        host:       str = rule_json.get("host")
+        segment:    str = rule_json.get("segmento")
+        action:     str = rule_json.get("acao")
+        time:       str = rule_json.get("horario")
+
+        if host_a and host_b and time:
+            item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
+            allow: bool = True if action == "permitir" else False
+
+            permission = self.controller.permissions[HOST_HOST_TIME].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=host_a, item_b=host_b, item_c=time)
+        
+        elif host_a and host_b:
+            item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
+            allow: bool = True if action == "permitir" else False
+            
+            permission = self.controller.permissions[HOST_HOST].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=host_a, item_b=host_b)
+                    
+        elif host and segment and time:
+            item_key: str = self.controller.get_ordered_string(items=[host, segment])
+            allow: bool = True if action == "permitir" else False
+            segment_addresses = self.controller.segments[segment]
+            permission = self.controller.permissions[HOST_SEGMENT_TIME].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=host, item_b=segment_addresses, item_c=time)
+
+        elif host and segment:
+            item_key: str = self.controller.get_ordered_string(items=[host, segment])
+            allow: bool = True if action == "permitir" else False
+            segment_addresses = self.controller.segments[segment]
+            
+            permission = self.controller.permissions[HOST_SEGMENT].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=host, item_b=segment_addresses)
+
+        elif segment_a and segment_b and time:
+            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            allow: bool = True if action == "permitir" else False
+            segment_a_addresses = self.controller.segments[segment_a]
+            segment_b_addresses = self.controller.segments[segment_b]
+
+            permission = self.controller.permissions[HOST_SEGMENT_TIME].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=segment_b_addresses, item_b=segment_a_addresses)
+           
+        elif segment_a and segment_b:
+            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            allow: bool = True if action == "permitir" else False
+            segment_a_addresses = self.controller.segments[segment_a]
+            segment_b_addresses = self.controller.segments[segment_b]
+
+            permission = self.controller.permissions[SEGMENT_SEGMENT].get(item_key)
+            if not permission:
+                return Response(status=404)
+            if permission.get("allow") != allow:
+                return Response(status=404)
+            del permission
+            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
 
     def remove_permissions(self, item_a: Union[str, list[str]], item_b: Union[str, list[str]]):
         mac_addresses_list: list[list[str]] = []
