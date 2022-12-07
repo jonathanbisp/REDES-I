@@ -143,7 +143,7 @@ class SwitchController(app_manager.RyuApp):
 
         self.switches.setdefault(datapathid, datapath)
 
-        self.add_flow(datapath=datapath, match=match, actions=actions, priority=0)
+        self.add_flow(datapath=datapath, match=match, actions=actions, priority=0, hard_timeout=0)
 
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
