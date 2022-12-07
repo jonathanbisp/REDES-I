@@ -185,11 +185,15 @@ class SwitchController(app_manager.RyuApp):
                 return
 
             hard_timeout = 0
-            time: str = priority_rule.get("time")
-            if time:
-                weekdaytime_range = time.split(" ")
+            time_permission: str = priority_rule.get("time_permission")
+            if time_permission:
+                weekdaytime_range = time_permission.split(" ")
                 week_range = weekdaytime_range[0]
                 time_range = weekdaytime_range[1]
+                
+                self.logger.info(not self.weekday_allowed(week_range))
+                self.logger.info(not self.time_allowed(time_range))
+                
                 if (not self.weekday_allowed(week_range)) or (not self.time_allowed(time_range)):
                     return
                 
@@ -363,18 +367,19 @@ class SwitchControllerHttp(ControllerBase):
         segment: str = rule_json.get("segmento")
         action: str = rule_json.get("acao")
         download_bandwidth: str = rule_json.get("banda_download")
-        time: str = rule_json.get("horario")
+        time_permission: str = rule_json.get("horario")
 
-        if host_a and host_b and time:
+
+        self.controller.logger.info(time_permission)
+        if host_a and host_b and time_permission:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
             allow: bool = True if action == "permitir" else False
 
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[HOST_HOST_TIME][item_key] = {
                 "target": [host_a, host_b],
                 "allow": allow,
-                "time": time,
+                "time_permission": time_permission,
             }
-
             self.remove_permissions(item_a=host_a, item_b=host_b)
         elif host_a and host_b:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
@@ -384,19 +389,16 @@ class SwitchControllerHttp(ControllerBase):
                 "target": [host_a, host_b],
                 "allow": allow
             }
-            
             self.remove_permissions(item_a=host_a, item_b=host_b)
-                    
-        elif host and segment and time:
+        elif host and segment and time_permission:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
 
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[HOST_SEGMENT_TIME][item_key] = {
                 "target": [host, segment],
                 "allow": allow,
-                "time": time,
+                "time_permission": time_permission,
             }
-
             self.remove_permissions(item_a=host, item_b=segment)
         elif host and segment:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
@@ -407,19 +409,16 @@ class SwitchControllerHttp(ControllerBase):
                 "target": [host, self.controller.segments[segment]],
                 "allow": allow
             }
-
             self.remove_permissions(item_a=host, item_b=segment_addresses)
-            
-        elif segment_a and segment_b and time:
+        elif segment_a and segment_b and time_permission:
             item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
             allow: bool = True if action == "permitir" else False
 
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[SEGMENT_SEGMENT_TIME][item_key] = {
                 "target": [segment_a, segment_b],
                 "allow": allow,
-                "time": time,
+                "time_permission": time_permission,
             }
-
             self.remove_permissions(item_a=segment_a, item_b=segment_b)
         elif segment_a and segment_b:
             item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
@@ -427,10 +426,9 @@ class SwitchControllerHttp(ControllerBase):
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
             
-            self.controller.permissions[HOST_SEGMENT][item_key] = {
+            self.controller.permissions[SEGMENT_SEGMENT][item_key] = {
                 "allow": allow
             }
-
             self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
 
 
