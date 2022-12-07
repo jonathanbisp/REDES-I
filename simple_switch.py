@@ -1,3 +1,4 @@
+from datetime import time, date, datetime
 from typing import Union
 import json
 
@@ -11,8 +12,6 @@ from ryu.app.wsgi import ControllerBase
 from ryu.app.wsgi import Response
 from ryu.app.wsgi import route
 from ryu.app.wsgi import WSGIApplication
-from ryu.lib import dpid as datapathid_lib
-
 from ryu.controller.controller import Datapath
 from ryu.ofproto import ofproto_v1_3
 from ryu.ofproto import ofproto_v1_3_parser
@@ -93,7 +92,38 @@ class SwitchController(app_manager.RyuApp):
                 if mac == mac_address:
                     return self.switches[datapathid], port
         return None, None
+    
+    
+    def weekday_allowed(self, week_range: str) -> bool:
+        conversion_day_week_int = {
+            "Seg": 1, "Ter": 2, "Qua": 3, "Qui": 4, "Sex":5, "Sab": 6, "Dom": 7
+        }
 
+        week_range = week_range.split("-")
+        first_day_week = week_range[0]
+        second_day_week = week_range[1]
+
+        first_day_week_int = conversion_day_week_int[first_day_week]
+        second_day_week_int = conversion_day_week_int[second_day_week]
+        temp_week_int = first_day_week_int
+        week_range_int = []
+        while temp_week_int != second_day_week_int:
+            week_range_int.append(temp_week_int)
+            if temp_week_int == conversion_day_week_int.get("Dom"):
+                temp_week_int = 0
+            else:
+                temp_week_int += 1
+        return date.today().isoweekday() in week_range_int
+        
+    def time_allowed(self, time_range: str) -> bool:
+        time_range = time_range.split("-")
+        time1 = time.fromisoformat(time_range[0])
+        time2 = time.fromisoformat(time_range[1])
+        now = datetime.now().time()
+        
+        now = datetime.now().time()
+        
+        return time1 < now < time2
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -114,6 +144,7 @@ class SwitchController(app_manager.RyuApp):
         self.switches.setdefault(datapathid, datapath)
 
         self.add_flow(datapath=datapath, match=match, actions=actions, priority=0)
+
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
@@ -152,6 +183,17 @@ class SwitchController(app_manager.RyuApp):
             priority_rule = self.get_priority_rule(src, dst)
             if not priority_rule:
                 return
+
+            hard_timeout = 0
+            time: str = priority_rule.get("time")
+            if time:
+                weekdaytime_range = time.split(" ")
+                week_range = weekdaytime_range[0]
+                time_range = weekdaytime_range[1]
+                if (not self.weekday_allowed(week_range)) or (not self.time_allowed(time_range)):
+                    return
+                
+                hard_timeout = 30
             
             match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
                 in_port=in_port, eth_dst=dst
@@ -162,12 +204,14 @@ class SwitchController(app_manager.RyuApp):
                     match=match,
                     actions=actions,
                     buffer_id=msg.buffer_id,
+                    hard_timeout=hard_timeout
                 )
             else:
                 self.add_flow(
                     datapath=datapath,
                     match=match,
                     actions=actions,
+                    hard_timeout=hard_timeout
                 )
 
         data = None
@@ -188,8 +232,9 @@ class SwitchController(app_manager.RyuApp):
         datapath: Datapath,
         match: ofproto_v1_3_parser.OFPMatch,
         actions: ofproto_v1_3_parser.OFPAction,
+        hard_timeout: int,
         priority: int = 1000,
-        buffer_id=None,
+        buffer_id = None,
     ):
         protocol_constants: ofproto_v1_3 = datapath.ofproto
         protocol_parser: ofproto_v1_3_parser = datapath.ofproto_parser
@@ -207,6 +252,7 @@ class SwitchController(app_manager.RyuApp):
                 priority=priority,
                 match=match,
                 instructions=instructions,
+                hard_timeout=hard_timeout
             )
         else:
             mod: ofproto_v1_3_parser.OFPFlowMod = protocol_parser.OFPFlowMod(
@@ -214,6 +260,7 @@ class SwitchController(app_manager.RyuApp):
                 priority=priority,
                 match=match,
                 instructions=instructions,
+                hard_timeout=hard_timeout
             )
         datapath.send_msg(mod)
 
@@ -319,11 +366,20 @@ class SwitchControllerHttp(ControllerBase):
         time: str = rule_json.get("horario")
 
         if host_a and host_b and time:
-            ...
+            item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
+            allow: bool = True if action == "permitir" else False
+
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [host_a, host_b],
+                "allow": allow,
+                "time": time,
+            }
+
+            self.remove_permissions(item_a=host_a, item_b=host_b)
         elif host_a and host_b:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
             allow: bool = True if action == "permitir" else False
-            
+
             self.controller.permissions[HOST_HOST][item_key] = {
                 "target": [host_a, host_b],
                 "allow": allow
@@ -332,7 +388,16 @@ class SwitchControllerHttp(ControllerBase):
             self.remove_permissions(item_a=host_a, item_b=host_b)
                     
         elif host and segment and time:
-            ...
+            item_key: str = self.controller.get_ordered_string(items=[host, segment])
+            allow: bool = True if action == "permitir" else False
+
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [host, segment],
+                "allow": allow,
+                "time": time,
+            }
+
+            self.remove_permissions(item_a=host, item_b=segment)
         elif host and segment:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
@@ -346,7 +411,16 @@ class SwitchControllerHttp(ControllerBase):
             self.remove_permissions(item_a=host, item_b=segment_addresses)
             
         elif segment_a and segment_b and time:
-            ...
+            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            allow: bool = True if action == "permitir" else False
+
+            self.controller.permissions[HOST_HOST][item_key] = {
+                "target": [segment_a, segment_b],
+                "allow": allow,
+                "time": time,
+            }
+
+            self.remove_permissions(item_a=segment_a, item_b=segment_b)
         elif segment_a and segment_b:
             item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
             allow: bool = True if action == "permitir" else False
@@ -358,12 +432,11 @@ class SwitchControllerHttp(ControllerBase):
             }
 
             self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
-            
-        
-            
+
+
     def remove_permissions(self, item_a: Union[str, list[str]], item_b: Union[str, list[str]]):
         mac_addresses_list: list[list[str]] = []
-        
+
         if isinstance(item_a, str) and isinstance(item_b, str):
             mac_addresses_list = [[item_a, item_b]]
         elif isinstance(item_a, list) and isinstance(item_b, str):
@@ -380,7 +453,7 @@ class SwitchControllerHttp(ControllerBase):
         for mac_addresses in mac_addresses_list:
             self.controller.logger.info(mac_addresses)
             self.del_host_rule(mac_addresses[0], mac_addresses[1])
-      
+
 
     def del_host_rule(self, mac_address_a, mac_address_b):
         try:
