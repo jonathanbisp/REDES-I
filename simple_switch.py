@@ -45,7 +45,7 @@ class SwitchController(app_manager.RyuApp):
             HOST_SEGMENT_TIME: {},
             HOST_SEGMENT: {},
             SEGMENT_SEGMENT_TIME: {},
-            SEGMENT_SEGMENT: {}
+            SEGMENT_SEGMENT: {},
         }
 
         self.switches: dict[int, Datapath] = {}
@@ -63,18 +63,18 @@ class SwitchController(app_manager.RyuApp):
             return "{}-{}".format(ordered[0], ordered[1])
         except TypeError:
             return None
-        
-        
-    def get_priority_rule(self, first:str, second:str) -> bool:
+
+    def get_priority_rule(self, first: str, second: str) -> bool:
         first_segment: str = self.get_segment_by_mac_address(mac_address=first)
         second_segment: str = self.get_segment_by_mac_address(mac_address=second)
-        
+
         mac_key: str = self.get_ordered_string([first, second])
         segment_key: str = self.get_ordered_string([first_segment, second_segment])
         host_segment_key1: str = self.get_ordered_string([first, second_segment])
         host_segment_key2: str = self.get_ordered_string([first_segment, second])
         keys: list[str] = [mac_key, segment_key, host_segment_key1, host_segment_key2]
-        
+        keys = [key for key in keys if key is not None]
+
         for level in range(HOST_HOST_TIME, SEGMENT_SEGMENT + 1):
             for key in keys:
                 permission = self.permissions[level].get(key)
@@ -85,18 +85,22 @@ class SwitchController(app_manager.RyuApp):
                         return None
         return None
 
-
     def find_port_datapath_by_mac(self, mac_address) -> Union[Datapath, int]:
         for datapathid, mac_port in self.mac_to_port.items():
             for mac, port in mac_port.items():
                 if mac == mac_address:
                     return self.switches[datapathid], port
         return None, None
-    
-    
+
     def weekday_allowed(self, week_range: str) -> bool:
         conversion_day_week_int = {
-            "Seg": 1, "Ter": 2, "Qua": 3, "Qui": 4, "Sex":5, "Sab": 6, "Dom": 7
+            "Seg": 1,
+            "Ter": 2,
+            "Qua": 3,
+            "Qui": 4,
+            "Sex": 5,
+            "Sab": 6,
+            "Dom": 7,
         }
 
         week_range = week_range.split("-")
@@ -114,15 +118,15 @@ class SwitchController(app_manager.RyuApp):
             else:
                 temp_week_int += 1
         return date.today().isoweekday() in week_range_int
-        
+
     def time_allowed(self, time_range: str) -> bool:
         time_range = time_range.split("-")
         time1 = time.fromisoformat(time_range[0])
         time2 = time.fromisoformat(time_range[1])
         now = datetime.now().time()
-        
+
         now = datetime.now().time()
-        
+
         return time1 < now < time2
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -144,7 +148,6 @@ class SwitchController(app_manager.RyuApp):
         self.switches.setdefault(datapathid, datapath)
 
         self.add_flow(datapath=datapath, match=match, actions=actions, priority=0)
-
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
@@ -179,7 +182,6 @@ class SwitchController(app_manager.RyuApp):
 
         # install a flow to avoid packet_in next time
         if out_port != protocol_constants.OFPP_FLOOD:
-
             priority_rule = self.get_priority_rule(src, dst)
             if not priority_rule:
                 return
@@ -190,11 +192,13 @@ class SwitchController(app_manager.RyuApp):
                 weekdaytime_range = time.split(" ")
                 week_range = weekdaytime_range[0]
                 time_range = weekdaytime_range[1]
-                if (not self.weekday_allowed(week_range)) or (not self.time_allowed(time_range)):
+                if (not self.weekday_allowed(week_range)) or (
+                    not self.time_allowed(time_range)
+                ):
                     return
-                
+
                 hard_timeout = 30
-            
+
             match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
                 in_port=in_port, eth_dst=dst
             )
@@ -204,14 +208,14 @@ class SwitchController(app_manager.RyuApp):
                     match=match,
                     actions=actions,
                     buffer_id=msg.buffer_id,
-                    hard_timeout=hard_timeout
+                    hard_timeout=hard_timeout,
                 )
             else:
                 self.add_flow(
                     datapath=datapath,
                     match=match,
                     actions=actions,
-                    hard_timeout=hard_timeout
+                    hard_timeout=hard_timeout,
                 )
 
         data = None
@@ -232,9 +236,9 @@ class SwitchController(app_manager.RyuApp):
         datapath: Datapath,
         match: ofproto_v1_3_parser.OFPMatch,
         actions: ofproto_v1_3_parser.OFPAction,
-        hard_timeout: int,
+        hard_timeout: int = 0,
         priority: int = 1000,
-        buffer_id = None,
+        buffer_id=None,
     ):
         protocol_constants: ofproto_v1_3 = datapath.ofproto
         protocol_parser: ofproto_v1_3_parser = datapath.ofproto_parser
@@ -252,7 +256,7 @@ class SwitchController(app_manager.RyuApp):
                 priority=priority,
                 match=match,
                 instructions=instructions,
-                hard_timeout=hard_timeout
+                hard_timeout=hard_timeout,
             )
         else:
             mod: ofproto_v1_3_parser.OFPFlowMod = protocol_parser.OFPFlowMod(
@@ -260,13 +264,11 @@ class SwitchController(app_manager.RyuApp):
                 priority=priority,
                 match=match,
                 instructions=instructions,
-                hard_timeout=hard_timeout
+                hard_timeout=hard_timeout,
             )
         datapath.send_msg(mod)
 
-    def del_flow(
-        self, datapath: Datapath, in_port: int, eth_dst: str
-    ) -> None:
+    def del_flow(self, datapath: Datapath, in_port: int, eth_dst: str) -> None:
         protocol_constants: ofproto_v1_3 = datapath.ofproto
         protocol_parser: ofproto_v1_3_parser = datapath.ofproto_parser
         match: ofproto_v1_3_parser.OFPMatch = protocol_parser.OFPMatch(
@@ -369,7 +371,7 @@ class SwitchControllerHttp(ControllerBase):
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
             allow: bool = True if action == "permitir" else False
 
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[HOST_HOST_TIME][item_key] = {
                 "target": [host_a, host_b],
                 "allow": allow,
                 "time": time,
@@ -382,17 +384,17 @@ class SwitchControllerHttp(ControllerBase):
 
             self.controller.permissions[HOST_HOST][item_key] = {
                 "target": [host_a, host_b],
-                "allow": allow
+                "allow": allow,
             }
-            
+
             self.remove_permissions(item_a=host_a, item_b=host_b)
-                    
+
         elif host and segment and time:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
             segment_addresses = self.controller.segments[segment]
 
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[HOST_SEGMENT_TIME][item_key] = {
                 "target": [host, segment_addresses],
                 "allow": allow,
                 "time": time,
@@ -403,50 +405,58 @@ class SwitchControllerHttp(ControllerBase):
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
             segment_addresses = self.controller.segments[segment]
-            
+
             self.controller.permissions[HOST_SEGMENT][item_key] = {
                 "target": [host, segment_addresses],
-                "allow": allow
+                "allow": allow,
             }
 
             self.remove_permissions(item_a=host, item_b=segment_addresses)
-            
+
         elif segment_a and segment_b and time:
-            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            item_key: str = self.controller.get_ordered_string(
+                items=[segment_a, segment_b]
+            )
             allow: bool = True if action == "permitir" else False
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
-            self.controller.permissions[HOST_HOST][item_key] = {
+            self.controller.permissions[SEGMENT_SEGMENT_TIME][item_key] = {
                 "target": [segment_a_addresses, segment_b_addresses],
                 "allow": allow,
                 "time": time,
             }
 
-            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
+            self.remove_permissions(
+                item_a=segment_a_addresses, item_b=segment_b_addresses
+            )
         elif segment_a and segment_b:
-            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            item_key: str = self.controller.get_ordered_string(
+                items=[segment_a, segment_b]
+            )
             allow: bool = True if action == "permitir" else False
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
-            
-            self.controller.permissions[HOST_SEGMENT][item_key] = {
-                "target": [segment_b_addresses, segment_b_addresses],
-                "allow": allow
+
+            self.controller.permissions[SEGMENT_SEGMENT][item_key] = {
+                "target": [segment_a_addresses, segment_b_addresses],
+                "allow": allow,
             }
 
-            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
+            self.remove_permissions(
+                item_a=segment_a_addresses, item_b=segment_b_addresses
+            )
 
     @route(myapp_name, "/nac/controle/", methods=["DELETE"])
     def remove_control(self, req, **kwargs):
         rule_json = req.json
-        segment_a:  str = rule_json.get("segmento_a")
-        segment_b:  str = rule_json.get("segmento_b")
-        host_a:     str = rule_json.get("host_a")
-        host_b:     str = rule_json.get("host_b")
-        host:       str = rule_json.get("host")
-        segment:    str = rule_json.get("segmento")
-        action:     str = rule_json.get("acao")
-        time:       str = rule_json.get("horario")
+        segment_a: str = rule_json.get("segmento_a")
+        segment_b: str = rule_json.get("segmento_b")
+        host_a: str = rule_json.get("host_a")
+        host_b: str = rule_json.get("host_b")
+        host: str = rule_json.get("host")
+        segment: str = rule_json.get("segmento")
+        action: str = rule_json.get("acao")
+        time: str = rule_json.get("horario")
 
         if host_a and host_b and time:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
@@ -457,21 +467,21 @@ class SwitchControllerHttp(ControllerBase):
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
-            self.remove_permissions(item_a=host_a, item_b=host_b, item_c=time)
-        
+            del self.controller.permissions[HOST_HOST_TIME][item_key]
+            self.remove_permissions(item_a=host_a, item_b=host_b)
+
         elif host_a and host_b:
             item_key: str = self.controller.get_ordered_string(items=[host_a, host_b])
             allow: bool = True if action == "permitir" else False
-            
+
             permission = self.controller.permissions[HOST_HOST].get(item_key)
             if not permission:
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
+            del self.controller.permissions[HOST_HOST][item_key]
             self.remove_permissions(item_a=host_a, item_b=host_b)
-                    
+
         elif host and segment and time:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
@@ -481,24 +491,26 @@ class SwitchControllerHttp(ControllerBase):
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
-            self.remove_permissions(item_a=host, item_b=segment_addresses, item_c=time)
+            del self.controller.permissions[HOST_SEGMENT_TIME][item_key]
+            self.remove_permissions(item_a=host, item_b=segment_addresses)
 
         elif host and segment:
             item_key: str = self.controller.get_ordered_string(items=[host, segment])
             allow: bool = True if action == "permitir" else False
             segment_addresses = self.controller.segments[segment]
-            
+
             permission = self.controller.permissions[HOST_SEGMENT].get(item_key)
             if not permission:
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
+            del self.controller.permissions[HOST_SEGMENT][item_key]
             self.remove_permissions(item_a=host, item_b=segment_addresses)
 
         elif segment_a and segment_b and time:
-            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            item_key: str = self.controller.get_ordered_string(
+                items=[segment_a, segment_b]
+            )
             allow: bool = True if action == "permitir" else False
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
@@ -508,11 +520,15 @@ class SwitchControllerHttp(ControllerBase):
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
-            self.remove_permissions(item_a=segment_b_addresses, item_b=segment_a_addresses)
-           
+            del self.controller.permissions[HOST_SEGMENT_TIME][item_key]
+            self.remove_permissions(
+                item_a=segment_b_addresses, item_b=segment_a_addresses
+            )
+
         elif segment_a and segment_b:
-            item_key: str = self.controller.get_ordered_string(items=[segment_a, segment_b])
+            item_key: str = self.controller.get_ordered_string(
+                items=[segment_a, segment_b]
+            )
             allow: bool = True if action == "permitir" else False
             segment_a_addresses = self.controller.segments[segment_a]
             segment_b_addresses = self.controller.segments[segment_b]
@@ -522,10 +538,15 @@ class SwitchControllerHttp(ControllerBase):
                 return Response(status=404)
             if permission.get("allow") != allow:
                 return Response(status=404)
-            del permission
-            self.remove_permissions(item_a=segment_a_addresses, item_b=segment_b_addresses)
+            
+            del self.controller.permissions[SEGMENT_SEGMENT][item_key]
+            self.remove_permissions(
+                item_a=segment_a_addresses, item_b=segment_b_addresses
+            )
 
-    def remove_permissions(self, item_a: Union[str, list[str]], item_b: Union[str, list[str]]):
+    def remove_permissions(
+        self, item_a: Union[str, list[str]], item_b: Union[str, list[str]]
+    ):
         mac_addresses_list: list[list[str]] = []
 
         if isinstance(item_a, str) and isinstance(item_b, str):
@@ -540,11 +561,9 @@ class SwitchControllerHttp(ControllerBase):
                 for mac_address_a in item_a
                 for mac_address_b in item_b
             ]
-        
-        for mac_addresses in mac_addresses_list:
-            self.controller.logger.info(mac_addresses)
-            self.del_host_rule(mac_addresses[0], mac_addresses[1])
 
+        for mac_addresses in mac_addresses_list:
+            self.del_host_rule(mac_addresses[0], mac_addresses[1])
 
     def del_host_rule(self, mac_address_a, mac_address_b):
         try:
@@ -557,7 +576,7 @@ class SwitchControllerHttp(ControllerBase):
                     in_port=port_a,
                     eth_dst=mac_address_b,
                 )
-            
+
             datapath_b, port_b = self.controller.find_port_datapath_by_mac(
                 mac_address_b
             )

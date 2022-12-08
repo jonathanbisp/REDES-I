@@ -20,46 +20,17 @@ sudo ovs-ofctl del-flows s6 -O OpenFlow13
 #iniciar ryu manager
 ryu-manager simple_switch_v4.py
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d '{"recepcao": ["11:00:00:00:00:00"], "internet":["61:00:00:00:00:00"], "visitante": ["01:00:00:00:00:00", "02:00:00:00:00:00"], "rh": ["21:00:00:00:00:00"], "diretoria": ["31:00:00:00:00:00"], "financeiro": ["41:00:00:00:00:00"], "ti": ["51:00:00:00:00:00"], "vendas": ["71:00:00:00:00:00"]}'
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/ -d '{"recepcao": ["00:00:00:00:00:11"], "internet":["00:00:00:00:00:61"], "visitante": ["00:00:00:00:00:01", "00:00:00:00:00:02"], "rh": ["00:00:00:00:00:21"], "diretoria": ["00:00:00:00:00:31"], "financeiro": ["00:00:00:00:00:41"], "ti": ["00:00:00:00:00:51"], "vendas": ["00:00:00:00:00:71"]}'
 curl -X GET -H 'Content-type: application/json' http://127.0.0.1:8080/nac/segmentos/
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "22:11:a6:c9:bb:72", "host_b": "72:cd:35:e1:8b:2b", "acao": "permitir"}'´
+curl -X GET -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "72:cd:35:e1:8b:2b", "host_b": "22:11:a6:c9:bb:72", "acao": "bloquear"}'
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "recepcao", "segmento_b": "internet", "acao": "permitir"}'
 
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "recepcao", "segmento_b": "internet", "acao": "bloquear"}'
+curl -X DELETE -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "recepcao", "segmento_b": "internet", "acao": "permitir"}'
 
-https://github.com/faucetsdn/ryu/blob/master/ryu/app/simple_switch_lacp_13.py#L40-L49
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "00:00:00:00:00:11", "host_b": "00:00:00:00:00:61", "acao": "bloquear"}'
 
-exemplo pra remover flow
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "00:00:00:00:00:11", "host_b": "00:00:00:00:00:61", "acao": "permitir", "horario" "Qui-Sab 01:00-10:00"}'
 
-hard_timeout
-
-
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "visitante", "segmento_b": "internet", "acao": "permitir"}'
-
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"segmento_a": "visitante", "segmento_b": "visitante", "acao": "permitir"}'
-
-curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "72:cd:35:e1:8b:2b", "host_b": "22:11:a6:c9:bb:72", "acao": "bloquear"}'
-
-
-linha 1686 sabe as w instead of wb
-
-horario
-
-host
-
-segmento
-
-host host horario
-
-host host host
-
-host segmento horario
-
-horarios > host > segmentos
-
-apagar tudo.
-
-# rodar isso aqui fodase
-sudo ovs-vswitchd
+curl -X POST -H 'Content-type: application/json' http://127.0.0.1:8080/nac/controle/ -d '{"host_a": "00:00:00:00:00:11", "host_b": "00:00:00:00:00:61", "acao": "bloquear"}'

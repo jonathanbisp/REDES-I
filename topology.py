@@ -12,7 +12,7 @@ from subprocess import call
 
 def myNetwork():
 
-    net = Mininet(topo=None, build=False, ipBase="10.0.0.0/8")
+    net = Mininet(topo=None, build=False, ipBase="10.0.0.0/8", autoSetMacs=False)
 
     info("*** Adding controller\n")
 
@@ -32,31 +32,69 @@ def myNetwork():
 
     info("*** Add hosts\n")
 
-    vendas1 = net.addHost("vendas1", cls=Host, ip="10.100.80.1/8", defaultRoute=None)
+    vendas1 = net.addHost(
+        "vendas1",
+        cls=Host,
+        ip="10.100.80.1/8",
+        mac="00:00:00:00:00:71",
+        defaultRoute=None,
+    )
 
     visitante1 = net.addHost(
-        "visitante1", cls=Host, ip="10.100.254.1/8", defaultRoute=None
+        "visitante1",
+        cls=Host,
+        ip="10.100.254.1/8",
+        mac="00:00:00:00:00:01",
+        defaultRoute=None,
     )
 
     visitante2 = net.addHost(
-        "visitante2", cls=Host, ip="10.100.254.2/8", defaultRoute=None
+        "visitante2",
+        cls=Host,
+        ip="10.100.254.2/8",
+        mac="00:00:00:00:00:02",
+        defaultRoute=None,
     )
 
     recepcao1 = net.addHost(
-        "recepcao1", cls=Host, ip="10.100.90.1/8", defaultRoute=None
+        "recepcao1",
+        cls=Host,
+        ip="10.100.90.1/8",
+        mac="00:00:00:00:00:11",
+        defaultRoute=None,
     )
 
-    rh1 = net.addHost("rh1", cls=Host, ip="10.100.70.1/8", defaultRoute=None)
+    rh1 = net.addHost(
+        "rh1", cls=Host, ip="10.100.70.1/8", mac="00:00:00:00:00:21", defaultRoute=None
+    )
 
     diretoria1 = net.addHost(
-        "diretoria1", cls=Host, ip="10.100.60.1/8", defaultRoute=None
+        "diretoria1",
+        cls=Host,
+        ip="10.100.60.1/8",
+        mac="00:00:00:00:00:31",
+        defaultRoute=None,
     )
 
-    finan1 = net.addHost("finan1", cls=Host, ip="10.100.50.1/8", defaultRoute=None)
+    finan1 = net.addHost(
+        "finan1",
+        cls=Host,
+        ip="10.100.50.1/8",
+        mac="00:00:00:00:00:41",
+        defaultRoute=None,
+    )
 
-    ti1 = net.addHost("ti1", cls=Host, ip="10.100.2.1/8", defaultRoute=None)
+    ti1 = net.addHost(
+        "ti1", cls=Host, ip="10.100.2.1/8", mac="00:00:00:00:00:51", defaultRoute=None
+    )
 
-    internet1 = net.addHost("internet1", cls=Host, ip="10.100.1.1/8", defaultRoute=None)
+    internet1 = net.addHost(
+        "internet1",
+        cls=Host,
+        ip="10.100.1.1/8",
+        mac="00:00:00:00:00:61",
+        defaultRoute=None,
+    )
 
     info("*** Add links\n")
 
@@ -95,7 +133,6 @@ def myNetwork():
     info("*** Starting controllers\n")
 
     for controller in net.controllers:
-
         controller.start()
 
     info("*** Starting switches\n")
